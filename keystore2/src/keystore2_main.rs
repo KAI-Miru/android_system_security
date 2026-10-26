@@ -35,6 +35,7 @@ static USER_MANAGER_SERVICE_NAME: &str = "android.security.maintenance";
 static LEGACY_KEYSTORE_SERVICE_NAME: &str = "android.security.legacykeystore";
 
 /// Keystore 2.0 takes one argument which is a path indicating its designated working directory.
+/// Recovery may pass `--recovery` after the directory to omit the boot-completion watcher.
 fn main() {
     // Initialize android logging.
     android_logger::init_once(
@@ -98,7 +99,10 @@ fn main() {
 
     ENFORCEMENTS.install_confirmation_token_receiver(confirmation_token_receiver);
 
-    std::thread::spawn(keystore2::globals::await_boot_completed);
+    // Recovery has no Android framework boot completion. Leave the GC gate closed.
+    if !args.any(|arg| arg == "--recovery") {
+        std::thread::spawn(keystore2::globals::await_boot_completed);
+    }
     entropy::register_feeder();
     shared_secret_negotiation::perform_shared_secret_negotiation();
 
