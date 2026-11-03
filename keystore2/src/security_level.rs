@@ -333,12 +333,34 @@ impl KeystoreSecurityLevel {
             .unwrap_key_if_required(&blob_metadata, km_blob)
             .context(ks_err!("Failed to handle super encryption."))?;
 
+        // Stock Reno sends only APPLICATION_ID for this metadata key upgrade.
+        // The initial and retried begin() still use the complete operation parameters.
+        let upgrade_parameters = if key.domain == Domain::BLOB
+            && key.nspace == 100 // Vold namespace.
+            && key.alias.as_deref() == Some("aera-reno-metadata-upgrade-test")
+            && caller_uid == 0
+            && purpose == android_hardware_security_keymint::aidl::android::hardware::security::keymint::KeyPurpose::KeyPurpose::DECRYPT
+            && self.security_level == SecurityLevel::TRUSTED_ENVIRONMENT
+            && rustutils::system_properties::read("ro.boot.prjname").ok().flatten().as_deref()
+                == Some("18115")
+            && rustutils::system_properties::read("ro.boot.mode").ok().flatten().as_deref()
+                == Some("recovery")
+        {
+            operation_parameters
+                .iter()
+                .find(|p| p.tag == Tag::APPLICATION_ID)
+                .map(std::slice::from_ref)
+                .unwrap_or(operation_parameters)
+        } else {
+            operation_parameters
+        };
+
         let (begin_result, upgraded_blob) = self
             .upgrade_keyblob_if_required_with(
                 key_id_guard,
                 &km_blob,
                 blob_metadata.km_uuid().copied(),
-                operation_parameters,
+                upgrade_parameters,
                 |blob| loop {
                     match map_km_error({
                         let _wp = self.watch(
