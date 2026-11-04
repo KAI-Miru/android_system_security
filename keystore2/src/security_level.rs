@@ -335,25 +335,31 @@ impl KeystoreSecurityLevel {
 
         // Stock Reno sends only APPLICATION_ID for this metadata key upgrade.
         // The initial and retried begin() still use the complete operation parameters.
-        let upgrade_parameters = if key.domain == Domain::BLOB
-            && key.nspace == 100 // Vold namespace.
-            && key.alias.as_deref() == Some("aera-reno-metadata-upgrade-test")
-            && caller_uid == 0
-            && purpose == android_hardware_security_keymint::aidl::android::hardware::security::keymint::KeyPurpose::KeyPurpose::DECRYPT
-            && self.security_level == SecurityLevel::TRUSTED_ENVIRONMENT
+        let reno_recovery_blob = key.domain == Domain::BLOB
             && rustutils::system_properties::read("ro.boot.prjname").ok().flatten().as_deref()
                 == Some("18115")
             && rustutils::system_properties::read("ro.boot.mode").ok().flatten().as_deref()
-                == Some("recovery")
+                == Some("recovery");
+        let metadata_marked = key.alias.as_deref() == Some("aera-reno-metadata-upgrade-test");
+        let application_id = if reno_recovery_blob
+            && key.nspace == 100 // Vold namespace.
+            && metadata_marked
+            && caller_uid == 0
+            && purpose == android_hardware_security_keymint::aidl::android::hardware::security::keymint::KeyPurpose::KeyPurpose::DECRYPT
+            && self.security_level == SecurityLevel::TRUSTED_ENVIRONMENT
         {
-            operation_parameters
-                .iter()
-                .find(|p| p.tag == Tag::APPLICATION_ID)
-                .map(std::slice::from_ref)
-                .unwrap_or(operation_parameters)
+            operation_parameters.iter().find(|p| p.tag == Tag::APPLICATION_ID)
         } else {
-            operation_parameters
+            None
         };
+        if reno_recovery_blob {
+            log::info!(
+                "Reno metadata upgrade: marker_present={metadata_marked} filter_selected={}",
+                application_id.is_some()
+            );
+        }
+        let upgrade_parameters =
+            application_id.map(std::slice::from_ref).unwrap_or(operation_parameters);
 
         let (begin_result, upgraded_blob) = self
             .upgrade_keyblob_if_required_with(

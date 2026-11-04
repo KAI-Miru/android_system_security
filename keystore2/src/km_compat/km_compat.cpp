@@ -25,6 +25,7 @@
 #include <aidl/android/hardware/security/keymint/PaddingMode.h>
 #include <aidl/android/system/keystore2/ResponseCode.h>
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android/hidl/manager/1.2/IServiceManager.h>
 #include <binder/IServiceManager.h>
 #include <hardware/keymaster_defs.h>
@@ -645,6 +646,15 @@ ScopedAStatus KeyMintDevice::upgradeKey(const std::vector<uint8_t>& in_inKeyBlob
         return status;
     }
 
+    if (android::base::GetProperty("ro.boot.prjname", "") == "18115" &&
+        android::base::GetProperty("ro.boot.mode", "") == "recovery") {
+        std::string tags;
+        for (const auto& param : legacyUpgradeParams) {
+            if (!tags.empty()) tags += ", ";
+            tags += V4_0::toString(param.tag);
+        }
+        LOG(INFO) << "Reno Keymaster upgradeKey tags: [" << tags << "]";
+    }
     auto result =
         mDevice->upgradeKey(prefixedKeyBlobRemovePrefix(in_inKeyBlobToUpgrade), legacyUpgradeParams,
                             [&](V4_0_ErrorCode error, const hidl_vec<uint8_t>& upgradedKeyBlob) {
